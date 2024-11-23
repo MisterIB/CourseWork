@@ -22,7 +22,9 @@
                 "-g",
                 "${file}",
                 "-o",
-                "${fileDirname}/${fileBasenameNoExtension}"
+                "${fileDirname}/${fileBasenameNoExtension}",
+                "-lpqxx",
+                "-lpq"
             ],
             "options": {
                 "cwd": "${fileDirname}"
