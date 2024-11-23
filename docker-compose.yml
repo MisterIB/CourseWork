@@ -1,7 +1,58 @@
-version: '3'
-
 services:
+  postgreSQL:
+    image: postgres:17.2
+    environment: #изменить
+      POSTGRES_USER: "tester"
+      POSTGRES_PASSWORD: "testPassword1"
+    ports:
+      - 5432:5432 #изменить
+    restart: always
+    volumes:
+      - ./db/init.sql:/docker-entrypoint-initdb.d/create_tables.sql
+      - ~/CourseWork/HockeyTeamData:/var/lib/postgresql/data
+    networks:
+      CourseWorkNet:
+        ipv4_address: 172.16.1.4
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tester -d tester"] #изменить имя DB
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   server:
-    build: server/
+    build: 
+      context: server/
+      args:
+        UID: ${UID}
+        GID: ${GID}
     ports:
       - 7432:7432
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - ~/CourseWork/configuration:/configuration
+      - /usr/include:/usr/include
+    networks:
+      CourseWorkNet:
+        ipv4_address: 172.16.1.5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: 100m
+        max-file: "1"
+    #healthcheck:
+    links:
+    - postgreSQL
+      
+volumes:
+  postgreSQL:
+    driver: local
+  
+networks:
+  CourseWorkNet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: "172.16.0.0/16"
