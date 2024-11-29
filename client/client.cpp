@@ -16,7 +16,10 @@ int main() {
         while (true) {
             char buffer[1024] = {0};
             int32_t bytes_received = read(clientSocket, buffer, sizeof(buffer));
-            if (bytes_received > 0) cout << buffer << endl;    
+            if (bytes_received > 0) cout << buffer << endl;
+            string message;
+            cin >> message;
+            send(clientSocket, message.c_str(), message.length(), 0);    
         }
         close(clientSocket);
     }
