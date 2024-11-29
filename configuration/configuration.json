@@ -1,6 +1,10 @@
 {
-    "name": "tester",
+    "name": "tester1",
     "structure": {
-        "forwards": ["name", "age", "team", "goals", "assists", "pim", "awards"]
+        "teams": ["name", "defenders", "forwards", "goalkeepers", "awards", "foundation_data"],
+        "forwards": ["name", "age", "team", "goals", "assists", "pim", "awards"],
+        "defenders": ["name", "age", "team", "goals", "assists", "pim", "awards"],
+        "goalkeepers": ["name", "age", "team", "SV", "assists", "pim", "awards"],
+        "coaches": ["name", "age", "team", "awards"]
     }
 }
