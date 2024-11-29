@@ -1,5 +1,5 @@
 CREATE TABLE forwards (
-    name VARCHAR(50), 
+    fullname VARCHAR(50), 
     age INT, 
     team VARCHAR(20), 
     goals INT, 
@@ -8,13 +8,8 @@ CREATE TABLE forwards (
     awards INT
 );
 
-CREATE TABLE users (
-    userID INT,
-    userName VARCHAR(50),
-    right VARCHAR(30)
-);
+INSERT INTO forwards (fullname, age, team, goals, assists, pim, awards) VALUES ('Igor', 19, 'privet', 1, 2, 3, 4);
 
-CREATE TABLE hashes (
-    userID INT,
-    hash VARCHAR(50)
-);
+INSERT INTO forwards (fullname, age, team, goals, assists, pim, awards) VALUES ('Vlad', 19, 'privet', 1, 2, 3, 4);
+
+INSERT INTO forwards (fullname, age, team, goals, assists, pim, awards) VALUES ('Anton', 19, 'privet', 1, 2, 3, 4);
