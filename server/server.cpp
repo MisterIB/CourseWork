@@ -157,8 +157,8 @@ public:
     virtual string printingTableData(Configuration& configuration, int32_t& amountOfColumns) const = 0;
 private:
     virtual void printListOfTables(Configuration& configuration) const = 0;
-    virtual void printListOfColumnes(Configuration& configuration, const string& tableName) const = 0;
-    virtual vector<string> getColumnNames(Configuration& configuration, const string& tableName, string& columnNumbers) const = 0;
+    virtual int32_t printListOfColumnes(Configuration& configuration, const string& tableName) const = 0;
+    virtual vector<string> getColumnNames(Configuration& configuration, const string& tableName, string& columnNumbers, int32_t Allnumber) const = 0;
     virtual string receiveDataFromDBToPrint(const vector<string>& columnNamesForPrint, const string& tableName) const = 0;
 };
 
@@ -174,9 +174,9 @@ public:
         printListOfTables(configuration);
         int32_t inputData = stoi(readClientsRequest(clientSocket));
         string tableName = configuration.tableNames[inputData - 1];
-        printListOfColumnes(configuration, tableName);
+        int32_t Allnumber = printListOfColumnes(configuration, tableName);
         string columnNumbers = readClientsRequest(clientSocket);
-        vector<string> columnNamesForPrint = getColumnNames(configuration, tableName, columnNumbers);
+        vector<string> columnNamesForPrint = getColumnNames(configuration, tableName, columnNumbers, Allnumber);
         string result = receiveDataFromDBToPrint(columnNamesForPrint, tableName); 
         amountOfColumns = columnNamesForPrint.size();
         return result;
@@ -193,18 +193,19 @@ private:
         send(clientSocket, message.c_str(), message.length(), 0);
     }
 
-    void printListOfColumnes(Configuration& configuration, const string& tableName) const override {
+    int32_t printListOfColumnes(Configuration& configuration, const string& tableName) const override {
         string message = "";
         message += "Select the columns to print\n";
         int32_t i = 1;
         for (string columnName: configuration.columnNames[tableName]) {
             message += "[" + to_string(i++) + "] - " + columnName + "\n";
         }
-        message += "[" + to_string(i++) + "] - " + "All\n";
+        message += "[" + to_string(i) + "] - " + "All\n";
         send(clientSocket, message.c_str(), message.length(), 0);
+        return i;
     }
 
-    vector<string> getColumnNames(Configuration& configuration, const string& tableName, string& columnNumbers) const override {
+    vector<string> getColumnNames(Configuration& configuration, const string& tableName, string& columnNumbers, int32_t Allnumber) const override {
         vector<string> columnNamesForPrint;
         set<int32_t> setColumnNumbers;
         istringstream columnNumbersStream(columnNumbers);
@@ -213,7 +214,7 @@ private:
             setColumnNumbers.insert(stoi(number));
         }
         int32_t i = 1;
-        if (setColumnNumbers.find(7) != setColumnNumbers.end()) {
+        if (setColumnNumbers.find(Allnumber) != setColumnNumbers.end()) {
             columnNamesForPrint.push_back("ALL");
             return columnNamesForPrint;
 
@@ -227,8 +228,6 @@ private:
     string receiveDataFromDBToPrint(const vector<string>& columnNamesForPrint, const string& tableName) const override {
         string result;
         if (columnNamesForPrint[0] == "ALL") {
-            //pqxx::result res{workWithDB.exec("SELECT * FROM forwards")};
-            //workWithDB.exec("SELECT * FROM forwards");
             result = "SELECT * FROM " + tableName;
         }
         return result;
@@ -257,7 +256,6 @@ void createDataBase(pqxx::work& db, Configuration& configuration) {
     pqxx::result r{db.exec("SELECT table_name FROM information_schema.tables WHERE table_schema = '" + configuration.dataBaseName + "' AND table_name = '" + configuration.tableNames[0] + "';")};
     if (!r.empty()) cout << "таблица уже создана" << endl;
     else {
-        db.exec("INSERT INTO forwards (name, age, team, goals, assists, pim, awards) VALUES ('Vlad', 19, 'NSTU', 0, 0, 10, 0)");
         r = db.exec("SELECT * FROM forwards");
         db.commit();
         for (auto const &row: r) {
@@ -286,37 +284,45 @@ string SendRequestInDB(const string& requestInDB, int32_t amountOfColumns) {
     string NrequestInDB = requestInDB + ";";//Delete
     pqxx::connection c("user=tester password=testPassword1 host=172.16.1.4 port=5432 dbname=tester target_session_attrs=read-write");
     pqxx::work db(c);
-    //pqxx::result res = db.exec(NrequestInDB);
-    pqxx::result res = db.exec("SELECT team FROM forwards");
+    pqxx::result res = db.exec(NrequestInDB);
+    //pqxx::result r = db.exec("SELECT * FROM forwards");
+    db.commit();
+    string result = "";
+    for (auto row = std::begin(res); row != std::end(res); row++) {
+        for (auto field = std::begin(row); field != std::end(row); field++) std::cout << field->c_str() << '\t';
+    std::cout << '\n';
+    }
+    cout << "уэээээээээ" << endl;
+    //result = createLineToSend(res, amountOfColumns);
     c.close();
-    string result;
-    result = createLineToSend(res, amountOfColumns);
     return result;
 }
 
 void processingRequests(int32_t clientSocket, unique_ptr<UserInterface>& user, Configuration& configuration) {
-    string message = "You have successfully logged in\n";
-    message += menu();
-    send(clientSocket, message.c_str(), message.length(), 0);
-    string request = readClientsRequest(clientSocket);
-    int32_t inputData = stoi(request);
-    cout << inputData << endl;//Delete
-    string requestInDB;
-    int32_t amountOfColumns;
-    if (inputData == 1) {
-        cout << "Зашел" << endl;//delete
-        requestInDB = user->printingTableData(configuration, amountOfColumns);
+    //string message = "You have successfully logged in\n";
+    while (true) {
+        string message = menu();
+        send(clientSocket, message.c_str(), message.length(), 0);
+        string request = readClientsRequest(clientSocket);
+        int32_t inputData = stoi(request);
+        cout << inputData << endl;//Delete
+        string requestInDB;
+        int32_t amountOfColumns;
+        if (inputData == 1) {
+            cout << "Зашел" << endl;//delete
+            requestInDB = user->printingTableData(configuration, amountOfColumns);
+        }
+        else if (inputData == 8) break;
+        cout << requestInDB << endl;//Delete
+        /*else if (inputData == 2)
+        else if (inputData == 3)
+        else if (inputData == 4)
+        else if (inputData == 5)
+        else if (inputData == 6)
+        else if (inputData == 7)*/   
+        message = SendRequestInDB(requestInDB, amountOfColumns);
+        send(clientSocket, message.c_str(), message.length(), 0);
     }
-    cout << requestInDB << endl;//Delete
-    /*else if (inputData == 2)
-    else if (inputData == 3)
-    else if (inputData == 4)
-    else if (inputData == 5)
-    else if (inputData == 6)
-    else if (inputData == 7)
-    else if (inputData == 8)*/
-    message = SendRequestInDB(requestInDB, amountOfColumns);
-    send(clientSocket, message.c_str(), message.length(), 0);
 }
 
 int64_t hashFunction(const string& password) {
@@ -367,7 +373,7 @@ void startingServer(Configuration& configuration) {
 int main() {
     try {
 	    setlocale(LC_ALL, "RUSSIAN");
-        //pqxx::connection conn("user=tester password=testPassword1 host=172.16.1.4 port=5432 dbname=tester1 target_session_attrs=read-write");//Через переменные среды
+        //pqxx::connection conn("user=tester password=testPassword1 host=172.16.1.4 port=5432 dbname=tester target_session_attrs=read-write");//Через переменные среды
         //pqxx::work db(conn);
         Configuration configuration;
         configuration.readConfiguration("/configuration/configuration.json");//путь сделать в переменную среду
