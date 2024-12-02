@@ -1,7 +1,8 @@
 //Подключение сервера и клиента через ip
-//При добавлении через админа изменять главную таблицу
 //Безопасностьт для user и hash
 //При поиске игрока выводить что нет игрока если нет
+//Sql инъекции
+//Улучшить статистику
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -386,6 +387,12 @@ public:
     string addFavoritePlayer(Configuration& configuration) const override {
         return this->userInterface_->addFavoritePlayer(configuration);
     }
+
+private:
+    virtual string deletePlayer(Configuration& configuration, const string& tableName) const = 0;
+    virtual string makeInsertRequest(Configuration& configuration, const string& tableName) const = 0;
+    virtual void printToSelectTable(Configuration& configuration) const = 0;
+    virtual void printListOfFeatures() const = 0;
 };
 
 class AdminUser: public Decorator {
@@ -393,13 +400,70 @@ public:
     AdminUser(UserInterface* userInterface): Decorator(userInterface) {}
 
     string changeTableData(Configuration& configuration) const override {
-        return "";
+        printListOfFeatures();
+        int32_t inputData = stoi(readClientsRequest(clientSocket));
+        printToSelectTable(configuration);
+        int32_t tableNumber = stoi(readClientsRequest(clientSocket));
+        string tableName = configuration.tableNames[tableNumber - 1];
+        string result;
+        if (inputData == 1) result = makeInsertRequest(configuration, tableName);
+        else if (inputData == 2 and tableNumber < 4) result = deletePlayer(configuration, tableName);
+        else throw runtime_error("Incorrect request");
+        return result;
     }
 
     string addFavoritePlayer(Configuration& configuration) const override {
         string message = "You are not logged in";
         send(clientSocket, message.c_str(), message.length(), 0);
         return "";
+    }
+
+private:
+    string deletePlayer(Configuration& configuration, const string& tableName) const override {
+        string message = "Enter the player's name";
+        send(clientSocket, message.c_str(), message.length(), 0);
+        string playerName = readClientsRequest(clientSocket);//sql инъекция
+        string result = "DELETE FROM " + tableName + " WHERE " + configuration.columnNames[tableName][0] + " = '" + playerName + "'";
+        return result;
+    }
+
+    string makeInsertRequest(Configuration& configuration, const string& tableName) const override {
+        vector<string> values;
+        string result = "INSERT INTO " + tableName + "(";
+        for (string columnName: configuration.columnNames[tableName]) {//sql инъекция
+            result += columnName + ", ";
+            string message = "Enter a value " + columnName;
+            send(clientSocket, message.c_str(), message.length(), 0);
+            string value = readClientsRequest(clientSocket);
+            values.push_back(value);
+        }
+        result.erase(result.size() - 2, 2);
+        result += ") VALUES (";
+        int32_t i = 1;
+        for (string value: values) {
+            if (i == 1 or i == 3) result += "'" + value + "'" + ", ";
+            else result += value  + ", ";
+            i++;
+        }
+        result.erase(result.size() - 2, 2);
+        result += ")";
+        return result;
+    }
+
+    void printToSelectTable(Configuration& configuration) const override {
+        string message = "";
+        int32_t i = 1;
+        for (string tableName: configuration.tableNames) {
+            if (tableName != "users") 
+                message += "[" + to_string(i++) + "] - " + tableName + "\n";
+            else i++;
+        }
+        send(clientSocket, message.c_str(), message.length(), 0);
+    } 
+
+    void printListOfFeatures() const override {
+        string message = "[1] - Inserting\n[2] - Correction of player data";
+        send(clientSocket, message.c_str(), message.length(), 0);
     }
 };
 
@@ -416,6 +480,11 @@ public:
     string addFavoritePlayer(Configuration& configuration) const override {
         return "";
     }
+private:
+    string deletePlayer(Configuration& configuration, const string& tableName) const override {}
+    string makeInsertRequest(Configuration& configuration, const string& tableName) const override {}
+    void printToSelectTable(Configuration& configuration) const override {}
+    void printListOfFeatures() const override {}
 };
 
 void createDataBase(pqxx::work& db, Configuration& configuration) {
@@ -496,19 +565,60 @@ int64_t hashFunction(const string& password) {
     return hash(password + salt);
 }
 
+bool passwordVerification(const string& password, const string& username) {
+    string hash = to_string(hashFunction(password));
+    cout << hash << endl;
+    string request = "SELECT users.hash_pswrd FROM users WHERE users.username = '" + username + "'";
+    pqxx::connection c("user=tester password=testPassword1 host=172.16.1.4 port=5432 dbname=tester target_session_attrs=read-write");//Переменные окружения
+    pqxx::work db(c);
+    for (auto [origHash]: db.query<string>(request)) if (origHash == hash) return true;
+    return false;
+}
+
+bool checkAccessRights(const string& username) {
+    string request = "SELECT users.right_user FROM users WHERE users.username = '" + username + "';";
+    pqxx::connection c("user=tester password=testPassword1 host=172.16.1.4 port=5432 dbname=tester target_session_attrs=read-write");//Переменные окружения
+    pqxx::work db(c);
+    string result = "";
+    for (auto [right]: db.query<string>(request)) {
+        result = right;
+    }
+    if (result == "admin") return true;
+    if (result == "regular") return false;
+}
+
 void userAuthorization(int32_t clientSocket, Configuration& configuration) {
     string response = startMenu();
-    send(clientSocket, response.c_str(), response.length(), 0);
-    int32_t amountOfAttempts = 3;
-    while (amountOfAttempts != 0) {
-        amountOfAttempts--;
+    response += authorizationMenu();
+    send(clientSocket, response.c_str(), response.length(), 0);//Свернуть в одну функцию
+    string userName = readClientsRequest(clientSocket);
+    if (userName == "Guest") {
+        unique_ptr<UserInterface> user(new GuestUser("Guest", clientSocket));
+        processingRequests(clientSocket, user, configuration);
     }
-    string request = readClientsRequest(clientSocket);//Delete
-    //UserInterface* user = new GuestUser("aboba", clientSocket);
-    unique_ptr<UserInterface> user(new GuestUser("aboba", clientSocket));
-
-    processingRequests(clientSocket, user, configuration);
-}
+    else {
+        response = "Enter the password (You have 3 attempts)";
+        send(clientSocket, response.c_str(), response.length(), 0);
+        int32_t amountOfAttempts = 3;
+        while (amountOfAttempts != 0) {
+            string passsword = readClientsRequest(clientSocket);
+            if (passwordVerification(passsword, userName)) break;
+            amountOfAttempts--;
+        }
+        if (amountOfAttempts == 0) {
+            throw runtime_error("The attempts are over");
+        }
+        UserInterface* user = new GuestUser(userName, clientSocket);
+        if (checkAccessRights(userName)) {
+        unique_ptr<UserInterface> admin(new AdminUser(user));
+        processingRequests(clientSocket, admin, configuration);
+        }
+        else {
+        unique_ptr<UserInterface> regularUser(new RegularUser(user));
+        processingRequests(clientSocket, regularUser, configuration);
+        }
+    }
+}   
 
 void startingServer(Configuration& configuration) {
     int32_t serverSocket = socket(AF_INET, SOCK_STREAM, 0);
