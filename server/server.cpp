@@ -1,8 +1,8 @@
 //Подключение сервера и клиента через ip
 //Безопасностьт для user и hash
 //При поиске игрока выводить что нет игрока если нет
-//Sql инъекции
-//Улучшить статистику
+//env - порт
+//json - путь
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -15,6 +15,13 @@
 #include <pqxx/pqxx>
 
 using namespace std;
+
+bool checkForSpecialCharacters(string& inputStr) {
+    for (char character: inputStr) {
+        if (character < 'A' or (character > 'Z' and character < 'a') or character > 'z') return true;
+    }
+    return false;
+}
 
 string readClientsRequest(int32_t clientSocket) {
     char buffer[1024] = {0};
@@ -44,13 +51,12 @@ string menu() {
     string message = "";
     message += "Select an action\n";
     message += "[1] - Printing table data\n";
-    message += "[2] - Printing statistics of the team's players\n";
+    message += "[2] - Printing statistics of the team's players (only regular user)\n";
     message += "[3] - Printing the best players\n";
     message += "[4] - Player Search\n";
     message += "[5] - Changing table data (only admin)\n";
-    message += "[6] - Add a favorite player (only regular user)\n";
-    message += "[7] - Registration (only guest)\n";
-    message += "[8] - Exit";
+    message += "[6] - Registration (only guest)\n";
+    message += "[7] - Exit";
     return message;
 }
 
@@ -159,14 +165,11 @@ class UserInterface {
 public:
     virtual ~UserInterface() {}
     virtual string printingTableData(Configuration& configuration, int32_t& amountOfColumns) const = 0;
-    virtual string PrintingTheBestPlayers(Configuration& configuration) const = 0;
+    virtual string printingTheBestPlayers(Configuration& configuration) const = 0;
     virtual string playerSearch(Configuration& configuration) const = 0;
     virtual string printStatOfTeamsPlayers(Configuration& configuration) const = 0;
     virtual string changeTableData(Configuration& configuration) const = 0;
-    virtual string addFavoritePlayer(Configuration& configuration) const = 0;
 private:
-    virtual void printNumberTableForStat(Configuration& configuration) const = 0;
-    virtual void printMessageToSelectTeam() const = 0;
     virtual string getColumnForSearch(Configuration& configuration, const string& tableName) const = 0;
     virtual void printMessageForLastNameInput() const = 0;
     virtual void printMessageForFirstNameInput() const = 0;
@@ -185,7 +188,7 @@ public:
     int32_t clientSocket;
 
     GuestUser(string name, int32_t socket): userName(name), clientSocket(socket) {}
-    GuestUser(): userName("nobody"), clientSocket(0) {}//???
+    GuestUser(): userName("nobody"), clientSocket(0) {}
 
     string printingTableData(Configuration& configuration, int32_t& amountOfColumns) const override {
         printListOfTables(configuration);
@@ -199,7 +202,7 @@ public:
         return result;
     }
 
-    string PrintingTheBestPlayers(Configuration& configuration) const override {
+    string printingTheBestPlayers(Configuration& configuration) const override {
         printListOfPlayers(configuration);
         int32_t inputData = stoi(readClientsRequest(clientSocket));
         string tableName = configuration.tableNames[inputData - 1];
@@ -213,8 +216,10 @@ public:
         int32_t inputData = stoi(readClientsRequest(clientSocket));
         printMessageForFirstNameInput();
         string playerName = readClientsRequest(clientSocket);
+        if (checkForSpecialCharacters(playerName)) return "";
         printMessageForLastNameInput();
         string playerLastName = readClientsRequest(clientSocket);
+        if (checkForSpecialCharacters(playerLastName)) return "";
         string tableName = configuration.tableNames[inputData - 1];
         string columnName = getColumnForSearch(configuration, tableName);
         string result = "SELECT * FROM " + tableName + " WHERE " + tableName + "." + columnName + " = '" +  playerName + " " + playerLastName + "'";
@@ -222,15 +227,9 @@ public:
     }
 
     string printStatOfTeamsPlayers(Configuration& configuration) const override {
-        printMessageToSelectTeam();
-        string teamName = readClientsRequest(clientSocket);
-        int32_t numberTable = stoi(readClientsRequest(clientSocket));
-        if (numberTable >= 3) {
-            throw runtime_error("Incorrect input data");
-            return "";
-        }
-        string result = "SELECT * FROM " + configuration.tableNames[numberTable] + " WHERE " + configuration.tableNames[numberTable] + "." + configuration.columnNames[configuration.tableNames[numberTable]][2] + " = '" + teamName + "'";
-        return result;
+        string message = "You are not a regular user";
+        send(clientSocket, message.c_str(), message.length(), 0);
+        return "";
     }
 
     string changeTableData(Configuration& configuration) const override {
@@ -239,28 +238,7 @@ public:
         return "";
     }
 
-    string addFavoritePlayer(Configuration& configuration) const override {
-        string message = "You are not logged in";
-        send(clientSocket, message.c_str(), message.length(), 0);
-        return "";
-    }
-
 private:
-    void printNumberTableForStat(Configuration& configuration) const override {
-        string message = "Select the position of the players\n";
-        int32_t i = 1;
-        for (string tableName: configuration.tableNames) {
-            message += "[" + to_string(i++) + "] - " + tableName + "\n";
-            if (i == 4) break;
-        }
-        send(clientSocket, message.c_str(), message.length(), 0);
-    }
-
-    void printMessageToSelectTeam() const override {
-        string message = "Enter the name of the team";
-        send(clientSocket, message.c_str(), message.length(), 0);
-    }
-
     string getColumnForSearch(Configuration& configuration, const string& tableName) const override {
         string columnName = configuration.columnNames[tableName][0];
         return columnName;
@@ -317,7 +295,7 @@ private:
 
     int32_t printListOfColumnes(Configuration& configuration, const string& tableName) const override {
         string message = "";
-        message += "Select the columns to print\n";
+        message += "Select the column to print\n";
         int32_t i = 1;
         for (string columnName: configuration.columnNames[tableName]) {
             message += "[" + to_string(i++) + "] - " + columnName + "\n";
@@ -372,8 +350,8 @@ public:
     string printingTableData(Configuration& configuration, int32_t& amountOfColumns) const override {
         return this->userInterface_->printingTableData(configuration, amountOfColumns);
     }
-    string PrintingTheBestPlayers(Configuration& configuration) const override {
-        return this->userInterface_->PrintingTheBestPlayers(configuration);
+    string printingTheBestPlayers(Configuration& configuration) const override {
+        return this->userInterface_->printingTheBestPlayers(configuration);
     }
     string playerSearch(Configuration& configuration) const override {
         return this->userInterface_->playerSearch(configuration);
@@ -384,15 +362,13 @@ public:
     string changeTableData(Configuration& configuration) const override {
         return this->userInterface_->changeTableData(configuration);
     }
-    string addFavoritePlayer(Configuration& configuration) const override {
-        return this->userInterface_->addFavoritePlayer(configuration);
-    }
-
 private:
     virtual string deletePlayer(Configuration& configuration, const string& tableName) const = 0;
     virtual string makeInsertRequest(Configuration& configuration, const string& tableName) const = 0;
     virtual void printToSelectTable(Configuration& configuration) const = 0;
     virtual void printListOfFeatures() const = 0;
+    virtual void printNumberTableForStat(Configuration& configuration) const = 0;
+    virtual void printMessageToSelectTeam() const = 0;
 };
 
 class AdminUser: public Decorator {
@@ -412,17 +388,12 @@ public:
         return result;
     }
 
-    string addFavoritePlayer(Configuration& configuration) const override {
-        string message = "You are not logged in";
-        send(clientSocket, message.c_str(), message.length(), 0);
-        return "";
-    }
-
 private:
     string deletePlayer(Configuration& configuration, const string& tableName) const override {
         string message = "Enter the player's name";
         send(clientSocket, message.c_str(), message.length(), 0);
-        string playerName = readClientsRequest(clientSocket);//sql инъекция
+        string playerName = readClientsRequest(clientSocket);
+        if (checkForSpecialCharacters(playerName)) return "";
         string result = "DELETE FROM " + tableName + " WHERE " + configuration.columnNames[tableName][0] + " = '" + playerName + "'";
         return result;
     }
@@ -435,6 +406,7 @@ private:
             string message = "Enter a value " + columnName;
             send(clientSocket, message.c_str(), message.length(), 0);
             string value = readClientsRequest(clientSocket);
+            if (checkForSpecialCharacters(value)) return "";
             values.push_back(value);
         }
         result.erase(result.size() - 2, 2);
@@ -465,6 +437,10 @@ private:
         string message = "[1] - Inserting\n[2] - Correction of player data";
         send(clientSocket, message.c_str(), message.length(), 0);
     }
+
+    void printNumberTableForStat(Configuration& configuration) const override {}
+    void printMessageToSelectTeam() const override {}
+
 };
 
 class RegularUser: public Decorator {
@@ -477,57 +453,62 @@ public:
         return "";
     }
 
-    string addFavoritePlayer(Configuration& configuration) const override {
-        return "";
+    string printStatOfTeamsPlayers(Configuration& configuration) const override {
+        printMessageToSelectTeam();
+        string teamName = readClientsRequest(clientSocket);
+        if (checkForSpecialCharacters(teamName)) return "";
+        printNumberTableForStat(configuration);
+        int32_t numberTable = stoi(readClientsRequest(clientSocket));
+        if (numberTable >= 3) {
+            throw runtime_error("Incorrect input data");
+            return "";
+        }
+        string result = "SELECT * FROM " + configuration.tableNames[numberTable] + " WHERE " + configuration.tableNames[numberTable] + "." + configuration.columnNames[configuration.tableNames[numberTable]][2] + " = '" + teamName + "'";
+        return result;
     }
+
 private:
+    void printNumberTableForStat(Configuration& configuration) const override {
+        string message = "Select the position of the players\n";
+        int32_t i = 1;
+        for (string tableName: configuration.tableNames) {
+            message += "[" + to_string(i++) + "] - " + tableName + "\n";
+            if (i == 4) break;
+        }
+        send(clientSocket, message.c_str(), message.length(), 0);
+    }
+
+    void printMessageToSelectTeam() const override {
+        string message = "Enter the name of the team";
+        send(clientSocket, message.c_str(), message.length(), 0);
+    }
+
     string deletePlayer(Configuration& configuration, const string& tableName) const override {}
     string makeInsertRequest(Configuration& configuration, const string& tableName) const override {}
     void printToSelectTable(Configuration& configuration) const override {}
     void printListOfFeatures() const override {}
 };
 
-void createDataBase(pqxx::work& db, Configuration& configuration) {
-    pqxx::result r{db.exec("SELECT table_name FROM information_schema.tables WHERE table_schema = '" + configuration.dataBaseName + "' AND table_name = '" + configuration.tableNames[0] + "';")};
-    if (!r.empty()) cout << "таблица уже создана" << endl;
-    else {
-        r = db.exec("SELECT * FROM forwards");
-        db.commit();
-        for (auto const &row: r) {
-            for (auto const &field: row) std::cout << field.c_str() << '\t';
-            std::cout << '\n';
-        }
-    }
-    
-}
-
-string createLineToSend(pqxx::result& res, int32_t amountOfColumn) {//возможно удалить количество 
+/*string createLineToSend(pqxx::result& res) {
     string result = "";
-    for (auto const &row: res) {
-            for (auto const &field: row)  {
-                result += field.c_str() + '\t';
-                cout << field.c_str() + '\t';
-            }
-            result += '\n';
-
-            cout << endl;
-        }
     return result;
-}
+}*/
 
 string SendRequestInDB(const string& requestInDB, int32_t amountOfColumns) {
-    string NrequestInDB = requestInDB + ";";//Delete
+    if (requestInDB == "") return "";
+    string newRequestInDB = requestInDB + ";";
     pqxx::connection c("user=tester password=testPassword1 host=172.16.1.4 port=5432 dbname=tester target_session_attrs=read-write");//Переменные окружения
     pqxx::work db(c);
-    pqxx::result res = db.exec(NrequestInDB);//Изменить имя
-    //pqxx::result r = db.exec("SELECT * FROM forwards");
+    pqxx::result res = db.exec(newRequestInDB);//Изменить имя
     db.commit();
     string result = "";
-    for (auto row = begin(res); row != end(res); row++) {
-        for (auto field = begin(row); field != end(row); field++) cout << field->c_str() << '\t';
-    cout << '\n';
+    for (auto r: res) {
+        for (auto f: r){
+            result += f.as<string>();
+        }
+        result += '\n';
     }
-    cout << "уэээээээээ" << endl;//Delete
+    cout << result << endl;
     //cout << result << endl;//Delete
     //result = createLineToSend(res, amountOfColumns);
     c.close();
@@ -535,25 +516,29 @@ string SendRequestInDB(const string& requestInDB, int32_t amountOfColumns) {
 }
 
 void processingRequests(int32_t clientSocket, unique_ptr<UserInterface>& user, Configuration& configuration) {
-    //string message = "You have successfully logged in\n";
     string message = menu();
     send(clientSocket, message.c_str(), message.length(), 0);
     while (true) {
         string request = readClientsRequest(clientSocket);
         int32_t inputData = stoi(request);
-        cout << inputData << endl;//Delete
         string requestInDB;
         int32_t amountOfColumns;
         if (inputData == 1) requestInDB = user->printingTableData(configuration, amountOfColumns);
         else if (inputData == 2) requestInDB = user->printStatOfTeamsPlayers(configuration);
-        else if (inputData == 3) requestInDB = user->PrintingTheBestPlayers(configuration);//Убрать большую букву
+        else if (inputData == 3) requestInDB = user->printingTheBestPlayers(configuration);
         else if (inputData == 4) requestInDB = user->playerSearch(configuration);
-        else if (inputData == 8) break;
+        else if (inputData == 5) requestInDB = user->printStatOfTeamsPlayers(configuration);
+        else if (inputData == 7) {
+            close(clientSocket);
+            return;
+        }
         cout << requestInDB << endl;//Delete
-        /*else if (inputData == 5)
-        else if (inputData == 6)
-        else if (inputData == 7)*/
+        /*else if (inputData == 6)*/
         message = SendRequestInDB(requestInDB, amountOfColumns);
+        if (message == "") {
+            close(clientSocket);
+            return;
+        }
         message += menu();
         send(clientSocket, message.c_str(), message.length(), 0);
     }
@@ -650,7 +635,6 @@ int main() {
 	    setlocale(LC_ALL, "RUSSIAN");
         Configuration configuration;
         configuration.readConfiguration("/configuration/configuration.json");//путь сделать в переменную среду
-        //createDataBase(db, configuration);
         startingServer(configuration);
     }
     catch (exception &e) {
