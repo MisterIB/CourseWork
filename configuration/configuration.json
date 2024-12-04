@@ -1,10 +1,15 @@
 {
-    "name": "tester1",
+    "name": "tester",
     "structure": {
-        "teams": ["name", "defenders", "forwards", "goalkeepers", "awards", "foundation_data"],
-        "forwards": ["name", "age", "team", "goals", "assists", "pim", "awards"],
-        "defenders": ["name", "age", "team", "goals", "assists", "pim", "awards"],
-        "goalkeepers": ["name", "age", "team", "SV", "assists", "pim", "awards"],
-        "coaches": ["name", "age", "team", "awards"]
-    }
+        "forwards": ["fullname", "age", "team", "goals", "assists", "pim"],
+        "defenders": ["fullname", "age", "team", "goals", "assists", "pim"],
+        "goalkeepers": ["fullname", "age", "team", "SV", "assists", "pim"],
+        "teams": ["team_name", "foundation_data",  "coach"],
+        "coaches": ["fullname", "age", "team"]
+    },
+    "POSTGRES_USER": "tester",
+    "POSTGRES_PASSWORD": "testPassword1",
+    "POSTGRES_PORT": "5432",
+    "POSTGRES_HOST": "172.16.1.4"
+
 }
