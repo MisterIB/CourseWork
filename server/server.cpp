@@ -9,10 +9,18 @@
 #include <thread>
 #include <bits/stdc++.h>
 #include <pqxx/pqxx>
+#include <chrono>
+#include <ctime>
 
 #include <curl/curl.h>
 
 using namespace std;
+
+void createLog(string message) {
+    auto tm = chrono::system_clock::now();
+    time_t end_time = chrono::system_clock::to_time_t(tm);
+    cout << ctime(&end_time) << " LOG: " << message;
+}
 
 bool checkForSpecialCharacters(string& inputStr) {
     for (char character: inputStr) {
@@ -547,9 +555,9 @@ void processingRequests(int32_t clientSocket, unique_ptr<UserInterface>& user, C
             close(clientSocket);
             return;
         }
-        cout << requestInDB << endl;//Delete
         /*else if (inputData == 6)*/
         message = SendRequestInDB(requestInDB, configuration);
+        createLog("A request has been sent to the database: " + requestInDB);
         if (message == "") {
             close(clientSocket);
             return;
@@ -594,6 +602,7 @@ void userAuthorization(int32_t clientSocket, Configuration& configuration) {
     string userName = readClientsRequest(clientSocket);
     if (userName == "Guest") {
         unique_ptr<UserInterface> user(new GuestUser("Guest", clientSocket));
+        createLog("The user logged in as a guest");
         processingRequests(clientSocket, user, configuration);
     }
     else {
@@ -611,10 +620,12 @@ void userAuthorization(int32_t clientSocket, Configuration& configuration) {
         UserInterface* user = new GuestUser(userName, clientSocket);
         if (checkAccessRights(userName, configuration)) {
         unique_ptr<UserInterface> admin(new AdminUser(user));
+        createLog("The user " + userName + " is logged in");
         processingRequests(clientSocket, admin, configuration);
         }
         else {
         unique_ptr<UserInterface> regularUser(new RegularUser(user));
+        createLog("The user " + userName + " is logged in");
         processingRequests(clientSocket, regularUser, configuration);
         }
     }
@@ -634,12 +645,12 @@ void startingServer(Configuration& configuration) {
     if (bind(serverSocket, (struct sockaddr*)&serverAddress, sizeof(serverAddress)) < 0) throw runtime_error("Address binding error");
     if (listen(serverSocket, 3) < 0) throw runtime_error("Listening error");
 
-    cout << "The server is listening" << endl;
+    createLog("The server is listening");
     while (true) {
         int32_t clientSocket = accept(serverSocket, nullptr, nullptr);
         if (clientSocket < 0) throw runtime_error("failed to accept the data");
 
-        cout << "A new client has connected: " << clientSocket << endl;
+        createLog("A new client has connected: " + clientSocket);
 
         thread t(userAuthorization, clientSocket, ref(configuration));
 		t.detach();
@@ -666,6 +677,7 @@ int main() {
         curl_easy_setopt(curl, CURLOPT_READDATA, &buffer);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buffer);
         cout << buffer << endl;*/
+        createLog("The server is turned off");
     }
     catch (exception &e) {
 		    cout << e.what();
