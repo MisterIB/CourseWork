@@ -1,8 +1,5 @@
 //Подключение сервера и клиента через ip
-//Безопасностьт для user и hash
 //При поиске игрока выводить что нет игрока если нет
-//env - порт
-//json - путь
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -11,8 +8,9 @@
 #include <unistd.h>
 #include <thread>
 #include <bits/stdc++.h>
-
 #include <pqxx/pqxx>
+
+#include <curl/curl.h>
 
 using namespace std;
 
@@ -65,6 +63,11 @@ public:
     string dataBaseName;
     vector<string> tableNames;
     map<string, vector<string>> columnNames;
+    string POSTGRES_USER;
+    string POSTGRES_PASSWORD;
+    string POSTGRES_PORT;
+    string POSTGRES_HOST;
+
 
     Configuration(): dataBaseName("") {}
 
@@ -73,6 +76,7 @@ public:
         if (confFile.is_open()) {
             dataBaseName = readDataBaseName(confFile);
             readTableNames(confFile);
+            readPostgresConf(confFile);
         }
         confFile.close();
     }   
@@ -104,6 +108,20 @@ private:
         return modifiedStr;
     }
 
+    void readPostgresConf(ifstream& confFile) {
+        string inputStr;
+        while (confFile >> inputStr) {
+            string prevInputStr = inputStr;
+            confFile >> inputStr;
+            inputStr = removeComma(inputStr);
+            inputStr = removeQuotes(inputStr);
+            if (prevInputStr == "\"POSTGRES_USER\":") POSTGRES_USER = inputStr;
+            if (prevInputStr == "\"POSTGRES_PASSWORD\":") POSTGRES_PASSWORD = inputStr;
+            if (prevInputStr == "\"POSTGRES_PORT\":") POSTGRES_PORT = inputStr;
+            if (prevInputStr == "\"POSTGRES_HOST\":") POSTGRES_HOST = inputStr;
+        }
+    }
+
     void readColumnNames(ifstream& confFile, const string& tableName) {
         string inputStr;
         getline(confFile, inputStr);
@@ -123,9 +141,9 @@ private:
         if (inputStr != "\"structure\":") throw runtime_error("Incorrect syntax in the JSON file");
         confFile >> inputStr;
         if (inputStr != "{") throw runtime_error("Incorrect syntax in the JSON file");
-        while (inputStr != "}") {
+        while (inputStr != "}" or inputStr != "},") {
             confFile >> inputStr;
-            if (inputStr == "}") break;
+            if (inputStr == "}" or inputStr == "},") break;
             inputStr = removeColon(inputStr);
             inputStr = removeQuotes(inputStr);
             tableNames.push_back(inputStr);
@@ -229,13 +247,13 @@ public:
     string printStatOfTeamsPlayers(Configuration& configuration) const override {
         string message = "You are not a regular user";
         send(clientSocket, message.c_str(), message.length(), 0);
-        return "";
+        return "0";
     }
 
     string changeTableData(Configuration& configuration) const override {
         string message = "You are not an administrator";
         send(clientSocket, message.c_str(), message.length(), 0);
-        return "";
+        return "0";
     }
 
 private:
@@ -346,7 +364,6 @@ protected:
     UserInterface* userInterface_;
 public:
     Decorator(UserInterface* userInterface): userInterface_(userInterface) {}
-    //Делегация работы
     string printingTableData(Configuration& configuration, int32_t& amountOfColumns) const override {
         return this->userInterface_->printingTableData(configuration, amountOfColumns);
     }
@@ -450,7 +467,7 @@ public:
     string changeTableData(Configuration& configuration) const override {
         string message = "You are not an Administrator";
         send(clientSocket, message.c_str(), message.length(), 0);
-        return "";
+        return "0";
     }
 
     string printStatOfTeamsPlayers(Configuration& configuration) const override {
@@ -489,28 +506,26 @@ private:
     void printListOfFeatures() const override {}
 };
 
-/*string createLineToSend(pqxx::result& res) {
-    string result = "";
-    return result;
-}*/
-
-string SendRequestInDB(const string& requestInDB, int32_t amountOfColumns) {
-    if (requestInDB == "") return "";
-    string newRequestInDB = requestInDB + ";";
-    pqxx::connection c("user=tester password=testPassword1 host=172.16.1.4 port=5432 dbname=tester target_session_attrs=read-write");//Переменные окружения
-    pqxx::work db(c);
-    pqxx::result res = db.exec(newRequestInDB);//Изменить имя
-    db.commit();
+string createLineToSend(pqxx::result& res) {
     string result = "";
     for (auto r: res) {
         for (auto f: r){
-            result += f.as<string>();
+            result += f.as<string>() + " ";
         }
         result += '\n';
     }
-    cout << result << endl;
-    //cout << result << endl;//Delete
-    //result = createLineToSend(res, amountOfColumns);
+    return result;
+}
+
+string SendRequestInDB(const string& requestInDB, Configuration& configuration) {
+    if (requestInDB == "") return "";
+    string newRequestInDB = requestInDB + ";";
+    pqxx::connection c("user=" + configuration.POSTGRES_USER + " password=" + configuration.POSTGRES_PASSWORD + " host=" + configuration.POSTGRES_HOST + " port=" + configuration.POSTGRES_PORT + " dbname=" + configuration.POSTGRES_USER + " target_session_attrs=read-write");
+    pqxx::work db(c);
+    pqxx::result res = db.exec(newRequestInDB);
+    db.commit();
+    string result;
+    result = createLineToSend(res);
     c.close();
     return result;
 }
@@ -534,7 +549,7 @@ void processingRequests(int32_t clientSocket, unique_ptr<UserInterface>& user, C
         }
         cout << requestInDB << endl;//Delete
         /*else if (inputData == 6)*/
-        message = SendRequestInDB(requestInDB, amountOfColumns);
+        message = SendRequestInDB(requestInDB, configuration);
         if (message == "") {
             close(clientSocket);
             return;
@@ -550,19 +565,19 @@ int64_t hashFunction(const string& password) {
     return hash(password + salt);
 }
 
-bool passwordVerification(const string& password, const string& username) {
+bool passwordVerification(const string& password, const string& username, Configuration& configuration) {
     string hash = to_string(hashFunction(password));
     cout << hash << endl;
     string request = "SELECT users.hash_pswrd FROM users WHERE users.username = '" + username + "'";
-    pqxx::connection c("user=tester password=testPassword1 host=172.16.1.4 port=5432 dbname=tester target_session_attrs=read-write");//Переменные окружения
+    pqxx::connection c("user=" + configuration.POSTGRES_USER + " password=" + configuration.POSTGRES_PASSWORD + " host=" + configuration.POSTGRES_HOST + " port=" + configuration.POSTGRES_PORT + " dbname=" + configuration.POSTGRES_USER + " target_session_attrs=read-write");
     pqxx::work db(c);
     for (auto [origHash]: db.query<string>(request)) if (origHash == hash) return true;
     return false;
 }
 
-bool checkAccessRights(const string& username) {
+bool checkAccessRights(const string& username, Configuration& configuration) {
     string request = "SELECT users.right_user FROM users WHERE users.username = '" + username + "';";
-    pqxx::connection c("user=tester password=testPassword1 host=172.16.1.4 port=5432 dbname=tester target_session_attrs=read-write");//Переменные окружения
+    pqxx::connection c("user=" + configuration.POSTGRES_USER + " password=" + configuration.POSTGRES_PASSWORD + " host=" + configuration.POSTGRES_HOST + " port=" + configuration.POSTGRES_PORT + " dbname=" + configuration.POSTGRES_USER + " target_session_attrs=read-write");
     pqxx::work db(c);
     string result = "";
     for (auto [right]: db.query<string>(request)) {
@@ -587,14 +602,14 @@ void userAuthorization(int32_t clientSocket, Configuration& configuration) {
         int32_t amountOfAttempts = 3;
         while (amountOfAttempts != 0) {
             string passsword = readClientsRequest(clientSocket);
-            if (passwordVerification(passsword, userName)) break;
+            if (passwordVerification(passsword, userName, configuration)) break;
             amountOfAttempts--;
         }
         if (amountOfAttempts == 0) {
             throw runtime_error("The attempts are over");
         }
         UserInterface* user = new GuestUser(userName, clientSocket);
-        if (checkAccessRights(userName)) {
+        if (checkAccessRights(userName, configuration)) {
         unique_ptr<UserInterface> admin(new AdminUser(user));
         processingRequests(clientSocket, admin, configuration);
         }
@@ -611,7 +626,9 @@ void startingServer(Configuration& configuration) {
 
     sockaddr_in serverAddress;
     serverAddress.sin_family = AF_INET;
-    serverAddress.sin_port = htons(7432);
+    const char* PORT_value = getenv("PORT");
+    if (PORT_value == nullptr) throw runtime_error("Environment variable not found");
+    serverAddress.sin_port = htons(stoi(PORT_value));
     serverAddress.sin_addr.s_addr = INADDR_ANY;
 
     if (bind(serverSocket, (struct sockaddr*)&serverAddress, sizeof(serverAddress)) < 0) throw runtime_error("Address binding error");
@@ -633,9 +650,22 @@ void startingServer(Configuration& configuration) {
 int main() {
     try {
 	    setlocale(LC_ALL, "RUSSIAN");
+        const char* PATH_CONF_value = getenv("PATH_CONF");
+        if (PATH_CONF_value == nullptr) throw runtime_error("Environment variable not found");
         Configuration configuration;
-        configuration.readConfiguration("/configuration/configuration.json");//путь сделать в переменную среду
+        configuration.readConfiguration(PATH_CONF_value);
         startingServer(configuration);
+
+        /*CURL *curl;
+        curl = curl_easy_init();
+        if (curl == NULL) throw runtime_error("Connection error");
+        curl_easy_setopt(curl, CURLOPT_URL, "http://127.0.0.1:8080");
+        //curl_easy_setopt(curl, CURLOPT_PORT, 8080);
+    
+        string buffer = "Hello world!!!";
+        curl_easy_setopt(curl, CURLOPT_READDATA, &buffer);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buffer);
+        cout << buffer << endl;*/
     }
     catch (exception &e) {
 		    cout << e.what();
