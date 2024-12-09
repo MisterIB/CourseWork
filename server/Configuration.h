@@ -109,20 +109,5 @@ private:
         inputStr = removeQuotes(inputStr);
         return inputStr;
     }
-public:
-    void print() {
-        cout << dataBaseName << endl;
-        for (string str: tableNames) {
-            cout << str << " ";
-        }
-        cout << endl;
-        for (string str: tableNames) {
-            for (string strMp: columnNames[str]) {
-                cout << strMp << " ";
-            }
-        }
-        cout << endl;
-    }
-
     friend class UserInterface;
 };
