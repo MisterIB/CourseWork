@@ -4,8 +4,9 @@ services:
     environment: #изменить
       POSTGRES_USER: "tester"
       POSTGRES_PASSWORD: "testPassword1"
+    container_name: postrges
     ports:
-      - 5432:5432 #изменить
+      - 5432:5432
     restart: always
     volumes:
       - /home/igor/CourseWork/db/data:/var/lib/postgresql/data
@@ -26,6 +27,7 @@ services:
       args:
         UID: ${UID}
         GID: ${GID}
+    container_name: server
     ports:
       - 7432:7432
     restart: always
@@ -33,7 +35,6 @@ services:
       - .env
     volumes:
       - ~/CourseWork/configuration:/configuration
-      - /usr/include:/usr/include
     networks:
       CourseWorkNet:
         ipv4_address: 172.16.1.5
@@ -45,13 +46,37 @@ services:
     #healthcheck:
     links:
     - postgreSQL
+
+  grafana:
+    image: grafana/grafana-enterprise
+    container_name: grafana
+    restart: always
+    user: "0:0"
+    environment:
+      GF_DATABASE_TYPE: postgres
+      GF_DATABASE_HOST: 172.16.1.4:5432
+      GF_DATABASE_NAME: my_grafana_db
+      GF_DATABASE_USER: my_grafana_user
+      GF_DATABASE_PASSWORD: my_grafana_pwd
+      GF_DATABASE_SSL_MODE: disable
+    ports:
+     - 3000:3000
+    depends_on:
+      - postgreSQL
+    volumes:
+      - grafana:/var/lib/postgresql/data
+    networks:
+      CourseWorkNet:
+        ipv4_address: 172.16.1.6
       
 volumes:
   db:
     driver: local
   postgreSQL:
     driver: local
-  
+  grafana:
+    driver: local
+
 networks:
   CourseWorkNet:
     driver: bridge
