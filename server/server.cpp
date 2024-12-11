@@ -1,7 +1,4 @@
-//Работа с файлами исправить добавление последней строки /n за /n? 
-//Картинку хоккеиста побольше
 //Сделать чтобы всегда выводилось имя и фамилия
-//Редакция игрока
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -39,7 +36,7 @@ string createLineToSend(pqxx::result& res) {
     string result = "";
     for (auto r: res) {
         for (auto f: r){
-            result += f.as<string>() + "\t";
+            result += f.as<string>() + "\t\t|\t\t";
         }
         result += '\n';
     }
@@ -66,8 +63,7 @@ void processingRequests(int32_t clientSocket, unique_ptr<UserInterface>& user, C
     while (true) {
         string message = menu();
         send(clientSocket, message.c_str(), message.length(), 0);
-        string request = readClientsRequest(clientSocket);
-        int32_t inputData = stoi(request);
+        int32_t inputData = readClientsRequestNumber(clientSocket);
         string requestInDB;
         string columnsForOutput = "";
         if (inputData == 1) requestInDB = user->printingTableData(configuration, columnsForOutput);
@@ -85,12 +81,12 @@ void processingRequests(int32_t clientSocket, unique_ptr<UserInterface>& user, C
             disconnectClient(clientSocket);
             return;
         }
-        string fullMessage = columnsForOutput + message;
+        string fullMessage = columnsForOutput + "\n" + message;
         if (message == "" and inputData != 6) fullMessage = "Nothing was found";
         if (message == "" and inputData == 6) fullMessage = "menu\nYou are registered";
         fullMessage += "\nTo send the next request, write \"Next\" and click \"OK\"";
         send(clientSocket, fullMessage.c_str(), fullMessage.length(), 0);
-        request = readClientsRequest(clientSocket);
+        string request = readClientsRequest(clientSocket);
         if (request != "Next") {
             disconnectClient(clientSocket);
             return;
