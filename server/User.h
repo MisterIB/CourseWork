@@ -87,12 +87,12 @@ private:
 };
 
 class GuestUser: public UserInterface {
-public:
+protected:
     string userName;
     int32_t clientSocket;
-
+public:
     GuestUser(string name, int32_t socket): userName(name), clientSocket(socket) {}
-    GuestUser(): userName("nobody"), clientSocket(0) {}
+    GuestUser() {}
 
     string printingTableData(Configuration& configuration, string& columnsForOutput) const override {
         printListOfTables(configuration);
@@ -164,9 +164,8 @@ private:
     string getAllColumns(Configuration& configuration, const string& tableName) const override {
         string columnsForOutput;
         for (string columnName: configuration.columnNames[tableName]) {
-            columnsForOutput += columnName + "\t\t|\t\t";
+            columnsForOutput += columnName + " ";
         }
-        columnsForOutput += "\n";
         return columnsForOutput;
     }
 
@@ -175,7 +174,7 @@ private:
         return columnName;
     }
 
-     void printMessageForFirstNameInput() const override {
+    void printMessageForFirstNameInput() const override {
         string message = "menu\nEnter the player's name";
         send(clientSocket, message.c_str(), message.length(), 0);
     }
@@ -247,17 +246,18 @@ private:
         int32_t i = 1;
         if (setColumnNumbers.find(Allnumber) != setColumnNumbers.end()) {
             columnNamesForPrint.push_back("ALL");
-            for (string columnName: configuration.columnNames[tableName]) columnsForOutput += columnName + "\t\t|\t\t";
+            for (string columnName: configuration.columnNames[tableName]) {
+                columnsForOutput += columnName + " ";
+            }
             return columnNamesForPrint;
         }
         for (string columnName: configuration.columnNames[tableName]) {
             if (i == 1 or setColumnNumbers.find(i) != setColumnNumbers.end() ) {
                 columnNamesForPrint.push_back(columnName);
-                columnsForOutput += columnName + "\t\t|\t\t";
+                columnsForOutput += columnName + " ";
                 i++;
             }
         }
-        columnsForOutput += "\n";
         return columnNamesForPrint;
     }
 
@@ -338,11 +338,15 @@ public:
 
 private:
     string deletePlayer(Configuration& configuration, const string& tableName) const override {
-        string message = "menu\nEnter the player's name";
+        string message = "menu\nEnter the player's first name";
         send(clientSocket, message.c_str(), message.length(), 0);
         string playerName = readClientsRequest(clientSocket);
         if (checkForSpecialCharacters(playerName)) return "";
-        string result = "DELETE FROM " + tableName + " WHERE " + configuration.columnNames[tableName][0] + " = '" + playerName + "'";
+        message = "menu\nEnter the player's last name";
+        send(clientSocket, message.c_str(), message.length(), 0);
+        string LastplayerName = readClientsRequest(clientSocket);
+        if (checkForSpecialCharacters(LastplayerName)) return "";
+        string result = "DELETE FROM " + tableName + " WHERE " + configuration.columnNames[tableName][0] + " = '" + playerName + " " + LastplayerName + "'";
         return result;
     }
     string makeInsertRequest(Configuration& configuration, const string& tableName) const override {
@@ -381,7 +385,7 @@ private:
     } 
 
     void printListOfFeatures() const override {
-        string message = "menu\n[1] - Inserting\n[2] - Correction of player data";
+        string message = "menu\n[1] - Inserting\n[2] - Deleting";
         send(clientSocket, message.c_str(), message.length(), 0);
     }
 
