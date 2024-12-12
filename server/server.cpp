@@ -1,8 +1,8 @@
-//Сделать чтобы всегда выводилось имя и фамилия
 #include <iostream>
 #include <fstream>
 #include <vector>
 #include <map>
+#include <string>
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <thread>
@@ -10,7 +10,6 @@
 #include <pqxx/pqxx>
 
 #include "User.h"
-#include "Configuration.h"
 
 using namespace std;
 
@@ -32,18 +31,22 @@ string menu() {
     return message;
 }
 
-string createLineToSend(pqxx::result& res) {
+string createLineToSend(pqxx::result& res, const string& columnsForOutput) {
     string result = "";
     for (auto r: res) {
+        istringstream columnNamesStream(columnsForOutput);
         for (auto f: r){
-            result += f.as<string>() + "\t\t|\t\t";
+            string tempStr;
+            columnNamesStream >> tempStr;
+            string tempResult = f.as<string>();
+            result += tempStr + ": " + tempResult;
         }
         result += '\n';
     }
     return result;
 }
 
-string SendRequestInDB(string& requestInDB, Configuration& configuration) {
+string SendRequestInDB(string& requestInDB, Configuration& configuration, string& columnsForOutput) {
     if (requestInDB == "") return "*";
     if (requestInDB == "!") return "Incorrect request";
     if (requestInDB[0] == '#') return requestInDB.erase(0, 1);
@@ -54,7 +57,7 @@ string SendRequestInDB(string& requestInDB, Configuration& configuration) {
     createLog("A request has been sent to the database: " + newRequestInDB);
     db.commit();
     string result;
-    result = createLineToSend(res);
+    result = createLineToSend(res, columnsForOutput);
     c.close();
     return result;
 }
@@ -76,16 +79,15 @@ void processingRequests(int32_t clientSocket, unique_ptr<UserInterface>& user, C
             disconnectClient(clientSocket);
             return;
         }
-        message = SendRequestInDB(requestInDB, configuration);
+        message = SendRequestInDB(requestInDB, configuration, columnsForOutput);
         if (message == "*") {
             disconnectClient(clientSocket);
             return;
         }
-        string fullMessage = columnsForOutput + "\n" + message;
-        if (message == "" and inputData != 6) fullMessage = "Nothing was found";
-        if (message == "" and inputData == 6) fullMessage = "menu\nYou are registered";
-        fullMessage += "\nTo send the next request, write \"Next\" and click \"OK\"";
-        send(clientSocket, fullMessage.c_str(), fullMessage.length(), 0);
+        if (message == "" and inputData != 6) message = "Nothing was found\n";
+        if (message == "" and inputData == 6) message = "menu\nYou are registered";
+        message += "\nTo send the next request, write \"Next\" and click \"OK\"";
+        send(clientSocket, message.c_str(), message.length(), 0);
         string request = readClientsRequest(clientSocket);
         if (request != "Next") {
             disconnectClient(clientSocket);
