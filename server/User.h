@@ -20,12 +20,11 @@ int64_t hashFunction(const string& password) {
 void createLog(string message) {
     auto tm = chrono::system_clock::now();
     time_t end_time = chrono::system_clock::to_time_t(tm);
-    //cout << ctime(&end_time) << " LOG: " << message << endl;
-    cout << " LOG: " << message << endl;
+    cout << " LOG: " << message << " | " << ctime(&end_time) << endl;
 }
 
 void disconnectClient(int32_t clientSocket) {
-    string message = "You are disconnected from the server";
+    string message = "\nYou are disconnected from the server";
     send(clientSocket, message.c_str(), message.length(), 0);
     close(clientSocket);
 }
@@ -69,12 +68,12 @@ public:
     virtual string printingTableData(Configuration& configuration, string& columnsForOutput) const = 0;
     virtual string printingTheBestPlayers(Configuration& configuration, string& columnsForOutput) const = 0;
     virtual string playerSearch(Configuration& configuration, string& columnsForOutput) const = 0;
-    virtual string printStatOfTeamsPlayers(Configuration& configuration, string& columnsForOutput) const = 0;
-    virtual string changeTableData(Configuration& configuration) const = 0;
+    virtual string printStatOfTeamsPlayers(Configuration& configuration, string& columnsForOutput, int32_t socket) const = 0;
+    virtual string changeTableData(Configuration& configuration, int32_t socket) const = 0;
     virtual string registration(Configuration& configuration) const = 0;
 private:
     virtual string getAllColumns(Configuration& configuration, const string& tableName) const = 0;
-    virtual string getColumnForSearch(Configuration& configuration, const string& tableName) const = 0;
+    virtual vector<string> getColumnForSearch(Configuration& configuration, const string& tableName) const = 0;
     virtual void printMessageForLastNameInput() const = 0;
     virtual void printMessageForFirstNameInput() const = 0;
     virtual void printPlayerSearchMenu(Configuration& configuration) const = 0;
@@ -128,17 +127,17 @@ public:
         string playerLastName = readClientsRequest(clientSocket);
         if (checkForSpecialCharacters(playerLastName)) return "";
         string tableName = configuration.tableNames[inputData - 1];
-        string columnName = getColumnForSearch(configuration, tableName);
+        vector<string> columnName = getColumnForSearch(configuration, tableName);
         columnsForOutput = getAllColumns(configuration, tableName);
-        string result = "SELECT * FROM " + tableName + " WHERE " + tableName + "." + columnName + " = '" +  playerName + " " + playerLastName + "'";
+        string result = "SELECT * FROM " + tableName + " WHERE " + tableName + "." + columnName[0] + " = '" +  playerName + "' AND ";
         return result;
     }
 
-    string printStatOfTeamsPlayers(Configuration& configuration, string& columnsForOutput) const override {
+    string printStatOfTeamsPlayers(Configuration& configuration, string& columnsForOutput, int32_t socket) const override {
         return "#menu\nYou are not a regular user";
     }
 
-    string changeTableData(Configuration& configuration) const override {
+    string changeTableData(Configuration& configuration, int32_t socket) const override {
         return "#menu\nYou are not an Administrator";
     }
 
@@ -169,8 +168,10 @@ private:
         return columnsForOutput;
     }
 
-    string getColumnForSearch(Configuration& configuration, const string& tableName) const override {
-        string columnName = configuration.columnNames[tableName][0];
+    vector<string> getColumnForSearch(Configuration& configuration, const string& tableName) const override {
+        vector<string> columnName;
+        columnName.push_back(configuration.columnNames[tableName][0]);
+        columnName.push_back(configuration.columnNames[tableName][1]);
         return columnName;
     }
 
@@ -252,11 +253,11 @@ private:
             return columnNamesForPrint;
         }
         for (string columnName: configuration.columnNames[tableName]) {
-            if (i == 1 or setColumnNumbers.find(i) != setColumnNumbers.end() ) {
+            if (i == 1 or i == 2 or (setColumnNumbers.find(i) != setColumnNumbers.end())) {
                 columnNamesForPrint.push_back(columnName);
                 columnsForOutput += columnName + " ";
-                i++;
             }
+            i++;
         }
         return columnNamesForPrint;
     }
@@ -292,39 +293,39 @@ public:
     string playerSearch(Configuration& configuration, string& columnsForOutput) const override {
         return this->userInterface_->playerSearch(configuration, columnsForOutput);
     }
-    string printStatOfTeamsPlayers(Configuration& configuration, string& columnsForOutput) const override {
-        return this->userInterface_->printStatOfTeamsPlayers(configuration, columnsForOutput);
+    string printStatOfTeamsPlayers(Configuration& configuration, string& columnsForOutput, int32_t socket) const override {
+        return this->userInterface_->printStatOfTeamsPlayers(configuration, columnsForOutput, socket);
     }
-    string changeTableData(Configuration& configuration) const override {
-        return this->userInterface_->changeTableData(configuration);
+    string changeTableData(Configuration& configuration, int32_t socket) const override {
+        return this->userInterface_->changeTableData(configuration, socket);
     }
     string registration(Configuration& configuration) const override {
         return this->userInterface_->registration(configuration);
     }
 private:
-    virtual string deletePlayer(Configuration& configuration, const string& tableName) const = 0;
-    virtual string makeInsertRequest(Configuration& configuration, const string& tableName) const = 0;
-    virtual void printToSelectTable(Configuration& configuration) const = 0;
-    virtual void printListOfFeatures() const = 0;
-    virtual void printNumberTableForStat(Configuration& configuration) const = 0;
-    virtual void printMessageToSelectTeam() const = 0;
+    virtual string deletePlayer(Configuration& configuration, const string& tableName, int32_t socket) const = 0;
+    virtual string makeInsertRequest(Configuration& configuration, const string& tableName, int32_t socket) const = 0;
+    virtual void printToSelectTable(Configuration& configuration, int32_t socket) const = 0;
+    virtual void printListOfFeatures(int32_t socket) const = 0;
+    virtual void printNumberTableForStat(Configuration& configuration, int32_t socket) const = 0;
+    virtual void printMessageToSelectTeam(int32_t socket) const = 0;
 };
 
 class AdminUser: public Decorator {
 public:
     AdminUser(UserInterface* userInterface): Decorator(userInterface) {}
 
-    string changeTableData(Configuration& configuration) const override {
-        printListOfFeatures();
-        int32_t inputData = readClientsRequestNumber(clientSocket);
+    string changeTableData(Configuration& configuration, int32_t socket) const override {
+        printListOfFeatures(socket);
+        int32_t inputData = readClientsRequestNumber(socket);
         if (inputData == -1) return "";
-        printToSelectTable(configuration);
-        int32_t tableNumber = readClientsRequestNumber(clientSocket);
+        printToSelectTable(configuration, socket);
+        int32_t tableNumber = readClientsRequestNumber(socket);
         if (tableNumber == -1) return "";
         string tableName = configuration.tableNames[tableNumber - 1];
         string result;
-        if (inputData == 1) result = makeInsertRequest(configuration, tableName);
-        else if (inputData == 2 and tableNumber < 4) result = deletePlayer(configuration, tableName);
+        if (inputData == 1) result = makeInsertRequest(configuration, tableName, socket);
+        else if (inputData == 2 and tableNumber < 4) result = deletePlayer(configuration, tableName, socket);
         else {
             createLog("Incorrect request");
             return "!";
@@ -337,26 +338,26 @@ public:
     }
 
 private:
-    string deletePlayer(Configuration& configuration, const string& tableName) const override {
+    string deletePlayer(Configuration& configuration, const string& tableName, int32_t socket) const override {
         string message = "menu\nEnter the player's first name";
-        send(clientSocket, message.c_str(), message.length(), 0);
-        string playerName = readClientsRequest(clientSocket);
+        send(socket, message.c_str(), message.length(), 0);
+        string playerName = readClientsRequest(socket);
         if (checkForSpecialCharacters(playerName)) return "";
         message = "menu\nEnter the player's last name";
-        send(clientSocket, message.c_str(), message.length(), 0);
-        string LastplayerName = readClientsRequest(clientSocket);
+        send(socket, message.c_str(), message.length(), 0);
+        string LastplayerName = readClientsRequest(socket);
         if (checkForSpecialCharacters(LastplayerName)) return "";
         string result = "DELETE FROM " + tableName + " WHERE " + configuration.columnNames[tableName][0] + " = '" + playerName + " " + LastplayerName + "'";
         return result;
     }
-    string makeInsertRequest(Configuration& configuration, const string& tableName) const override {
+    string makeInsertRequest(Configuration& configuration, const string& tableName, int32_t socket) const override {
         vector<string> values;
         string result = "INSERT INTO " + tableName + "(";
         for (string columnName: configuration.columnNames[tableName]) {
             result += columnName + ", ";
             string message = "Enter a value " + columnName;
-            send(clientSocket, message.c_str(), message.length(), 0);
-            string value = readClientsRequest(clientSocket);
+            send(socket, message.c_str(), message.length(), 0);
+            string value = readClientsRequest(socket);
             if (checkForSpecialCharacters(value)) return "";
             values.push_back(value);
         }
@@ -373,7 +374,7 @@ private:
         return result;
     }
 
-    void printToSelectTable(Configuration& configuration) const override {
+    void printToSelectTable(Configuration& configuration, int32_t socket) const override {
         string message = "menu\n";
         int32_t i = 1;
         for (string tableName: configuration.tableNames) {
@@ -381,16 +382,16 @@ private:
                 message += "[" + to_string(i++) + "] - " + tableName + "\n";
             else i++;
         }
-        send(clientSocket, message.c_str(), message.length(), 0);
+        send(socket, message.c_str(), message.length(), 0);
     } 
 
-    void printListOfFeatures() const override {
+    void printListOfFeatures(int32_t socket) const override {
         string message = "menu\n[1] - Inserting\n[2] - Deleting";
-        send(clientSocket, message.c_str(), message.length(), 0);
+        send(socket, message.c_str(), message.length(), 0);
     }
 
-    void printNumberTableForStat(Configuration& configuration) const override {}
-    void printMessageToSelectTeam() const override {}
+    void printNumberTableForStat(Configuration& configuration, int32_t socket) const override {}
+    void printMessageToSelectTeam(int32_t socket) const override {}
 
 };
 
@@ -398,19 +399,19 @@ class RegularUser: public Decorator {
 public:
     RegularUser(UserInterface* userInterface): Decorator(userInterface) {}
 
-    string changeTableData(Configuration& configuration) const override {
+    string changeTableData(Configuration& configuration, int32_t socket) const override {
         return "#menu\nYou are not an Administrator";
     }
 
-    string printStatOfTeamsPlayers(Configuration& configuration, string& columnsForOutput) const override {
-        printMessageToSelectTeam();
-        string teamName = readClientsRequest(clientSocket);
+    string printStatOfTeamsPlayers(Configuration& configuration, string& columnsForOutput, int32_t socket) const override {
+        printMessageToSelectTeam(socket);
+        string teamName = readClientsRequest(socket);
         if (checkForSpecialCharacters(teamName)) return "";
-        printNumberTableForStat(configuration);
-        int32_t numberTable = readClientsRequestNumber(clientSocket);
+        printNumberTableForStat(configuration, socket);
+        int32_t numberTable = readClientsRequestNumber(socket);
         if (numberTable == -1) return "";
         if (numberTable >= 3) {
-            createLog("Incorrect input data from user: client socket(" + to_string(clientSocket) + ")");
+            createLog("Incorrect input data from user: client socket(" + to_string(socket) + ")");
             return "!";
         }
         string tableName = configuration.tableNames[numberTable];
@@ -427,23 +428,23 @@ public:
     }
 
 private:
-    void printNumberTableForStat(Configuration& configuration) const override {
+    void printNumberTableForStat(Configuration& configuration, int32_t socket) const override {
         string message = "menu\nSelect the position of the players\n";
         int32_t i = 1;
         for (string tableName: configuration.tableNames) {
             message += "[" + to_string(i++) + "] - " + tableName + "\n";
             if (i == 4) break;
         }
-        send(clientSocket, message.c_str(), message.length(), 0);
+        send(socket, message.c_str(), message.length(), 0);
     }
 
-    void printMessageToSelectTeam() const override {
+    void printMessageToSelectTeam(int32_t socket) const override {
         string message = "menu\nEnter the name of the team";
-        send(clientSocket, message.c_str(), message.length(), 0);
+        send(socket, message.c_str(), message.length(), 0);
     }
 
-    string deletePlayer(Configuration& configuration, const string& tableName) const override {}
-    string makeInsertRequest(Configuration& configuration, const string& tableName) const override {}
-    void printToSelectTable(Configuration& configuration) const override {}
-    void printListOfFeatures() const override {}
+    string deletePlayer(Configuration& configuration, const string& tableName, int32_t socket) const override {}
+    string makeInsertRequest(Configuration& configuration, const string& tableName, int32_t socket) const override {}
+    void printToSelectTable(Configuration& configuration, int32_t socket) const override {}
+    void printListOfFeatures(int32_t socket) const override {}
 };
